@@ -6,7 +6,6 @@ plugins {
     java
     kotlin("jvm") version "2.2.0"
     id("fabric-loom") version "1.15-SNAPSHOT"
-    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 val baseGroup = project.properties["mod.group"].toString()
@@ -27,8 +26,8 @@ sourceSets.main {
 
 loom {
     mixin {
+        useLegacyMixinAp.set(true)
         defaultRefmapName.set("mixins.$modId.refmap.json")
-        add("main", "mixins.$modId.refmap.json")
     }
     runConfigs {
         named("client") {
@@ -36,6 +35,10 @@ loom {
         }
         remove(named("server").get())
     }
+}
+
+val embed: Configuration by configurations.creating {
+    configurations.implementation.get().extendsFrom(this)
 }
 
 repositories {
@@ -46,10 +49,6 @@ repositories {
     maven("https://maven.deftu.dev/releases")
 }
 
-val shadowImpl: Configuration by configurations.creating {
-    configurations.implementation.get().extendsFrom(this)
-}
-
 dependencies {
     minecraft("com.mojang:minecraft:${project.properties["minecraft_version"]}")
     mappings("net.fabricmc:yarn:${project.properties["yarn_mappings"]}:v2")
@@ -57,19 +56,18 @@ dependencies {
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.properties["fabric_version"]}")
     modImplementation("net.fabricmc:fabric-language-kotlin:${project.properties["fabric_kotlin_version"]}")
 
-    shadowImpl("org.reflections:reflections:0.10.2")
+    embed("org.reflections:reflections:0.10.2")
 
-    // TODO: Verify that these Essential library versions support Fabric 1.21.1.
+    // TODO: Verify these Essential library versions support Fabric 1.21.11.
     // Check https://repo.essential.gg for updated coordinates.
-    shadowImpl("gg.essential:elementa:710")
-    shadowImpl("gg.essential:universalcraft-1.21.11-fabric:330")
+    embed("gg.essential:elementa:710")
+    embed("gg.essential:universalcraft-1.21.11-fabric:330")
 
-    shadowImpl("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
-    shadowImpl("com.squareup.okhttp3:okhttp-jvm:5.2.1")
+    embed("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
+    embed("com.squareup.okhttp3:okhttp-jvm:5.2.1")
 
-    // TODO: Check https://maven.deftu.dev/releases for a vexel-1.21.1-fabric artifact.
-    // Uncomment and update the version once confirmed.
-    // shadowImpl("xyz.meowing:vexel-1.21.1-fabric:110")
+    // TODO: Check https://maven.deftu.dev/releases for a vexel-1.21.11-fabric artifact.
+    // embed("xyz.meowing:vexel-1.21.11-fabric:110")
 
     modRuntimeOnly("me.djtheredstoner:DevAuth-fabric:1.2.1")
 }
@@ -146,25 +144,14 @@ tasks.processResources {
     from("build/generated/resources")
 }
 
-tasks.shadowJar {
-    destinationDirectory.set(layout.buildDirectory.dir("archiveJars"))
-    archiveClassifier.set("deps")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    configurations = listOf(shadowImpl)
-    exclude("META-INF/versions/**")
-    fun relocate(name: String) = relocate(name, "$baseGroup.deps.$name")
-    relocate("gg.essential.elementa")
-    relocate("gg.essential.universal")
-    mergeServiceFiles()
-}
-
 tasks.jar {
-    archiveClassifier.set("without-deps")
-    destinationDirectory.set(layout.buildDirectory.dir("intermediates"))
+    from(embed.map { if (it.isDirectory) it else zipTree(it) })
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    archiveBaseName.set("zen-1.21.11-fabric")
+    archiveClassifier.set("dev")
 }
 
-tasks.named<net.fabricmc.loom.task.RemapJarTask>("remapJar") {
-    inputFile.set(tasks.shadowJar.flatMap { it.archiveFile })
+tasks.remapJar {
     archiveClassifier.set("")
     archiveBaseName.set("zen-1.21.11-fabric-${modVersion}")
 }
