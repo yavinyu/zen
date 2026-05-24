@@ -5,7 +5,7 @@ plugins {
     idea
     java
     kotlin("jvm") version "2.2.0"
-    id("fabric-loom") version "1.15-SNAPSHOT"
+    id("fabric-loom") version "1.14-SNAPSHOT"
 }
 
 val baseGroup = project.properties["mod.group"].toString()
@@ -57,7 +57,7 @@ repositories {
 
 dependencies {
     minecraft("com.mojang:minecraft:${project.properties["minecraft_version"]}")
-    mappings("net.fabricmc:yarn:${project.properties["yarn_mappings"]}:v2")
+    mappings(loom.officialMojangMappings())
     modImplementation("net.fabricmc:fabric-loader:${project.properties["loader_version"]}")
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.properties["fabric_version"]}")
     modImplementation("net.fabricmc:fabric-language-kotlin:${project.properties["fabric_kotlin_version"]}")
