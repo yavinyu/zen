@@ -37,8 +37,14 @@ loom {
     }
 }
 
-val embed: Configuration by configurations.creating {
-    configurations.implementation.get().extendsFrom(this)
+// Standalone embed config — does NOT extend implementation to avoid
+// Gson/Loom configuration-phase conflicts (Gson 2.9.1 module access issue).
+val embed: Configuration by configurations.creating
+
+// Helper: add to both embed (for jar bundling) and implementation (for compilation).
+fun DependencyHandler.bundled(notation: Any) {
+    add("embed", notation)
+    add("implementation", notation)
 }
 
 repositories {
@@ -56,18 +62,17 @@ dependencies {
     modImplementation("net.fabricmc.fabric-api:fabric-api:${project.properties["fabric_version"]}")
     modImplementation("net.fabricmc:fabric-language-kotlin:${project.properties["fabric_kotlin_version"]}")
 
-    embed("org.reflections:reflections:0.10.2")
+    bundled("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
+    bundled("com.squareup.okhttp3:okhttp-jvm:5.2.1")
 
-    // TODO: Verify these Essential library versions support Fabric 1.21.11.
-    // Check https://repo.essential.gg for updated coordinates.
-    embed("gg.essential:elementa:710")
-    embed("gg.essential:universalcraft-1.21.11-fabric:330")
+    // TODO: Find correct elementa version for Fabric 1.21.11 at repo.essential.gg
+    // bundled("gg.essential:elementa:710")
 
-    embed("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
-    embed("com.squareup.okhttp3:okhttp-jvm:5.2.1")
+    // TODO: Find correct universalcraft version for Fabric 1.21.11 at repo.essential.gg
+    // bundled("gg.essential:universalcraft-1.21.11-fabric:330")
 
-    // TODO: Check https://maven.deftu.dev/releases for a vexel-1.21.11-fabric artifact.
-    // embed("xyz.meowing:vexel-1.21.11-fabric:110")
+    // TODO: Check https://maven.deftu.dev/releases for vexel-1.21.11-fabric
+    // bundled("xyz.meowing:vexel-1.21.11-fabric:110")
 
     modRuntimeOnly("me.djtheredstoner:DevAuth-fabric:1.2.1")
 }
