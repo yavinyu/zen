@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "${mod_id}",
+  "version": "${mod_version}",
+  "name": "Zen",
+  "description": "QOL Mod for Hypixel Skyblock",
+  "authors": ["Kiwi", "Aurielyn", "MrFast"],
+  "contact": {
+    "homepage": "https://github.com/kiwidotzip/zen/",
+    "sources": "https://github.com/kiwidotzip/zen/"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "xyz.meowing.zen.Zen"
+    ]
+  },
+  "mixins": [
+    "mixins.zen.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric": "*",
+    "minecraft": "~1.21.11",
+    "java": ">=21",
+    "fabric-language-kotlin": "*"
+  }
+}

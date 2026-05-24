@@ -1,50 +1,51 @@
 package xyz.meowing.zen.events
 
+import net.minecraft.client.gui.screen.Screen
+import net.minecraft.client.gui.screen.ingame.HandledScreen
+import net.minecraft.entity.Entity
+import net.minecraft.entity.LivingEntity
+import net.minecraft.entity.player.PlayerEntity
+import net.minecraft.item.ItemStack
+import net.minecraft.network.packet.Packet
+import net.minecraft.network.packet.s2c.play.EntitySpawnS2CPacket
+import net.minecraft.network.packet.s2c.play.EntityTrackerUpdateS2CPacket
+import net.minecraft.network.packet.s2c.play.PlayerListS2CPacket
+import net.minecraft.screen.ScreenHandler
+import net.minecraft.screen.slot.Slot
+import net.minecraft.text.Text
+import net.minecraft.util.math.BlockPos
+import net.minecraft.util.math.Vec3d
+import net.minecraft.world.World
 import xyz.meowing.zen.api.EntityDetection
 import xyz.meowing.zen.api.ItemAbility
 import xyz.meowing.zen.api.PartyTracker.PartyMember
-import net.minecraft.client.gui.GuiScreen
-import net.minecraft.client.gui.ScaledResolution
-import net.minecraft.client.gui.inventory.GuiContainer
-import net.minecraft.client.model.ModelBase
-import net.minecraft.entity.Entity
-import net.minecraft.entity.EntityLivingBase
-import net.minecraft.entity.player.EntityPlayer
-import net.minecraft.inventory.Container
-import net.minecraft.item.ItemStack
-import net.minecraft.network.Packet
-import net.minecraft.network.play.server.S02PacketChat
-import net.minecraft.network.play.server.S0FPacketSpawnMob
-import net.minecraft.network.play.server.S1CPacketEntityMetadata
-import net.minecraft.network.play.server.S38PacketPlayerListItem
-import net.minecraft.util.BlockPos
-import net.minecraft.util.Vec3
-import net.minecraft.world.World
-import net.minecraftforge.client.event.ClientChatReceivedEvent
-import net.minecraftforge.client.event.MouseEvent
-import net.minecraftforge.client.event.RenderGameOverlayEvent
-import net.minecraftforge.event.entity.living.EnderTeleportEvent
-import net.minecraftforge.event.entity.player.PlayerInteractEvent
 import java.util.concurrent.atomic.AtomicLong
 
 abstract class Event
 
 abstract class CancellableEvent : Event() {
     private var cancelled = false
-    fun cancel() {
-        cancelled = true
-    }
+    fun cancel() { cancelled = true }
     fun isCancelled() = cancelled
 }
 
+/** Replaces net.minecraftforge.client.event.RenderGameOverlayEvent.ElementType */
+enum class HudElementType {
+    ALL, EXPERIENCE, ARMOR, HEALTH, FOOD, AIR, HOTBAR, CROSSHAIRS, BOSSHEALTH,
+    POTION, JUMP_BAR, PLAYER_LIST, TEXT, SUBTITLES, FPSOVERLAY, DEBUGOVERLAY, ITEM_NAME
+}
+
+/** Replaces net.minecraftforge.event.entity.player.PlayerInteractEvent.Action */
+enum class InteractAction { RIGHT_CLICK_BLOCK, LEFT_CLICK_BLOCK, RIGHT_CLICK_AIR }
+
 class HurtCamEvent(val partialTicks: Float) : CancellableEvent()
 class SidebarUpdateEvent(val lines: List<String>) : Event()
-class TablistEvent(val packet: S38PacketPlayerListItem) : Event()
-class ItemTooltipEvent(val lines: MutableList<String>,val itemStack: ItemStack) : CancellableEvent()
+class TablistEvent(val packet: PlayerListS2CPacket) : Event()
+class ItemTooltipEvent(val lines: MutableList<String>, val itemStack: ItemStack) : CancellableEvent()
 
 abstract class InternalEvent {
     abstract class NeuAPI {
-        class Load() : Event()
+        class Load : Event()
     }
 
     abstract class GuiMouse {
@@ -58,10 +59,10 @@ abstract class InternalEvent {
 }
 
 abstract class MouseEvent {
-    class Click(val event: MouseEvent) : Event()
-    class Release(val event: MouseEvent) : Event()
-    class Scroll(val event: MouseEvent) : Event()
-    class Move(val event: MouseEvent) : Event()
+    class Click(val mouseX: Double, val mouseY: Double, val button: Int) : Event()
+    class Release(val mouseX: Double, val mouseY: Double, val button: Int) : Event()
+    class Scroll(val horizontal: Double, val vertical: Double) : Event()
+    class Move(val mouseX: Double, val mouseY: Double) : Event()
 }
 
 abstract class KeyEvent {
@@ -72,10 +73,10 @@ abstract class KeyEvent {
 abstract class EntityEvent {
     class Join(val entity: Entity) : CancellableEvent()
     class Leave(val entity: Entity) : Event()
-    class Attack(val entityPlayer: EntityPlayer, val target: Entity) : Event()
-    class Metadata(val packet: S1CPacketEntityMetadata, val entity: Entity, val name: String) : CancellableEvent()
-    class Spawn(val packet: S0FPacketSpawnMob, val entity: Entity, val name: String) : CancellableEvent()
-    class Interact(val action: PlayerInteractEvent.Action, val pos: BlockPos?) : Event()
+    class Attack(val entityPlayer: PlayerEntity, val target: Entity) : Event()
+    class Metadata(val packet: EntityTrackerUpdateS2CPacket, val entity: Entity, val name: String) : CancellableEvent()
+    class Spawn(val packet: EntitySpawnS2CPacket, val entity: Entity, val name: String) : CancellableEvent()
+    class Interact(val action: InteractAction, val pos: BlockPos?) : Event()
     class ArrowHit(val shooterName: String, val hitEntity: Entity) : Event()
     class ItemToss(val stack: ItemStack) : CancellableEvent()
 }
@@ -87,21 +88,30 @@ abstract class TickEvent {
 
 abstract class RenderEvent {
     class World(val partialTicks: Float) : Event()
-    class EntityModel(val entity: EntityLivingBase, val model: ModelBase, val limbSwing: Float, val limbSwingAmount: Float, val ageInTicks: Float, val headYaw: Float, val headPitch: Float, val scaleFactor: Float) : Event()
-    class Text(val partialTicks: Float, val resolution: ScaledResolution) : CancellableEvent()
-    class HUD(val elementType: RenderGameOverlayEvent.ElementType, val partialTicks: Float, val resolution: ScaledResolution) : CancellableEvent()
+    /**
+     * [model] removed – ModelBase was 1.8.9 only; access the model from the renderer if needed.
+     */
+    class EntityModel(
+        val entity: LivingEntity,
+        val limbSwing: Float, val limbSwingAmount: Float, val ageInTicks: Float,
+        val headYaw: Float, val headPitch: Float, val scaleFactor: Float
+    ) : Event()
+    /** [scaledWidth]/[scaledHeight] replace the removed ScaledResolution */
+    class Text(val partialTicks: Float, val scaledWidth: Int, val scaledHeight: Int) : CancellableEvent()
+    class HUD(val elementType: HudElementType, val partialTicks: Float, val scaledWidth: Int, val scaledHeight: Int) : CancellableEvent()
     class BlockHighlight(val blockPos: BlockPos, val partialTicks: Float) : CancellableEvent()
-    class EndermanTP(val event: EnderTeleportEvent) : CancellableEvent()
-    class GuardianLaser(val entity: net.minecraft.entity.Entity, val target: net.minecraft.entity.Entity) : CancellableEvent()
+    /** [entity] is the entity being teleported (was EnderTeleportEvent) */
+    class EndermanTP(val entity: LivingEntity) : CancellableEvent()
+    class GuardianLaser(val entity: Entity, val target: Entity) : Event()
 
     abstract class Entity {
-        class Pre(val entity: EntityLivingBase, val x: Double, val y: Double, val z: Double) : CancellableEvent()
-        class Post(val entity: EntityLivingBase, val x: Double, val y: Double, val z: Double) : CancellableEvent()
+        class Pre(val entity: LivingEntity, val x: Double, val y: Double, val z: Double) : CancellableEvent()
+        class Post(val entity: LivingEntity, val x: Double, val y: Double, val z: Double) : CancellableEvent()
     }
 
     abstract class Player {
-        class Pre(val player: EntityPlayer, val x: Double, val y: Double, val z: Double, val partialTicks: Float) : CancellableEvent()
-        class Post(val player: EntityPlayer, val x: Double, val y: Double, val z: Double, val partialTicks: Float) : CancellableEvent()
+        class Pre(val player: PlayerEntity, val x: Double, val y: Double, val z: Double, val partialTicks: Float) : CancellableEvent()
+        class Post(val player: PlayerEntity, val x: Double, val y: Double, val z: Double, val partialTicks: Float) : CancellableEvent()
     }
 }
 
@@ -114,29 +124,30 @@ enum class PartyChangeType {
 }
 
 abstract class GuiEvent {
-    class Open(val screen: GuiScreen) : Event()
-    class Close(val gui: GuiContainer, val container: Container) : CancellableEvent()
-    class Click(val gui: GuiScreen) : CancellableEvent()
-    class Key(val gui: GuiScreen) : CancellableEvent()
-    class BackgroundDraw(val gui: GuiScreen) : CancellableEvent()
+    class Open(val screen: Screen) : Event()
+    class Close(val gui: HandledScreen<*>, val container: ScreenHandler) : CancellableEvent()
+    class Click(val gui: Screen) : CancellableEvent()
+    class Key(val gui: Screen) : CancellableEvent()
+    class BackgroundDraw(val gui: Screen) : CancellableEvent()
 
     abstract class Mouse {
-        class Press(val mouseX: Int, val mouseY: Int, val mouseButton: Int, val gui: GuiContainer) : CancellableEvent()
-        class Release(val mouseX: Int, val mouseY: Int, val mouseButton: Int, val gui: GuiContainer) : CancellableEvent()
-        class Move(val mouseX: Int, val mouseY: Int, val mouseButton: Int, val gui: GuiContainer) : CancellableEvent()
-        class Scroll(val mouseX: Int, val mouseY: Int, val scroll: Int, val gui: GuiContainer) : CancellableEvent()
+        class Press(val mouseX: Int, val mouseY: Int, val mouseButton: Int, val gui: HandledScreen<*>) : CancellableEvent()
+        class Release(val mouseX: Int, val mouseY: Int, val mouseButton: Int, val gui: HandledScreen<*>) : CancellableEvent()
+        class Move(val mouseX: Int, val mouseY: Int, val mouseButton: Int, val gui: HandledScreen<*>) : CancellableEvent()
+        class Scroll(val mouseX: Int, val mouseY: Int, val scroll: Int, val gui: HandledScreen<*>) : CancellableEvent()
     }
 
     abstract class Slot {
-        class Click(val slot: net.minecraft.inventory.Slot?, val gui: GuiContainer?, val container: Container, val slotId: Int, val clickedButton: Int, val clickType: Int) : CancellableEvent()
-        class RenderPre(val slot: net.minecraft.inventory.Slot, val gui: GuiContainer) : CancellableEvent()
-        class RenderPost(val slot: net.minecraft.inventory.Slot, val gui: GuiContainer) : CancellableEvent()
+        class Click(val slot: Slot?, val gui: HandledScreen<*>?, val container: ScreenHandler, val slotId: Int, val clickedButton: Int, val clickType: Int) : CancellableEvent()
+        class RenderPre(val slot: Slot, val gui: HandledScreen<*>) : CancellableEvent()
+        class RenderPost(val slot: Slot, val gui: HandledScreen<*>) : CancellableEvent()
     }
 }
+
 abstract class ChatEvent {
-    class Receive(val event: ClientChatReceivedEvent) : CancellableEvent()
+    /** [message] is the chat text; [overlay] is true for action-bar messages */
+    class Receive(val message: Text, val overlay: Boolean) : CancellableEvent()
     class Send(val message: String, val chatUtils: Boolean) : CancellableEvent()
-    class Packet(val packet: S02PacketChat) : CancellableEvent()
 }
 
 abstract class PacketEvent {
@@ -155,10 +166,7 @@ abstract class WorldEvent {
             fun shouldPost(): Boolean {
                 val currentTime = System.currentTimeMillis()
                 val lastTime = lastChangeTime.get()
-
-                if (currentTime - lastTime < COOLDOWN_MS) {
-                    return false
-                }
+                if (currentTime - lastTime < COOLDOWN_MS) return false
                 return lastChangeTime.compareAndSet(lastTime, currentTime)
             }
         }
@@ -166,24 +174,25 @@ abstract class WorldEvent {
 }
 
 abstract class GameEvent {
-    class Load() : Event()
-    class Unload() : Event()
-    class Disconnect() : Event()
-    class ActionBar(val event: ClientChatReceivedEvent) : CancellableEvent()
+    class Load : Event()
+    class Unload : Event()
+    class Disconnect : Event()
+    /** [message] is the action bar text */
+    class ActionBar(val message: Text) : CancellableEvent()
 }
 
 abstract class SkyblockEvent {
     abstract class Slayer {
-        class Spawn(val entity: Entity, val entityID: Int, val packet: S1CPacketEntityMetadata) : Event()
+        class Spawn(val entity: Entity, val entityID: Int, val packet: EntityTrackerUpdateS2CPacket) : Event()
         class Death(val entity: Entity, val entityID: Int) : Event()
-        class Cleanup() : Event()
-        class Fail() : Event()
-        class QuestStart() : Event()
+        class Cleanup : Event()
+        class Fail : Event()
+        class QuestStart : Event()
     }
 
     class ItemAbilityUsed(val ability: ItemAbility.ItemAbility) : Event()
     class EntitySpawn(val skyblockMob: EntityDetection.SkyblockMob) : Event()
-    class DamageSplash(val damage: Int, val originalName: String, val entityPos: Vec3, val packet: S0FPacketSpawnMob) : CancellableEvent()
+    class DamageSplash(val damage: Int, val originalName: String, val entityPos: Vec3d, val packet: EntitySpawnS2CPacket) : CancellableEvent()
 }
 
 abstract class AreaEvent {

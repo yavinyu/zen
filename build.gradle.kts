@@ -1,63 +1,41 @@
-import org.apache.commons.lang3.SystemUtils
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
 
 plugins {
     idea
     java
     kotlin("jvm") version "2.2.0"
-    id("gg.essential.loom") version "0.10.0.+"
-    id("dev.architectury.architectury-pack200") version "0.1.3"
+    id("fabric-loom") version "1.15-SNAPSHOT"
     id("com.github.johnrengelman.shadow") version "8.1.1"
-    id("net.kyori.blossom") version "1.3.2"
 }
 
 val baseGroup = project.properties["mod.group"].toString()
-val mcVersion = project.properties["minecraft.version"].toString()
+val mcVersion = project.properties["minecraft_version"].toString()
 val modId = project.properties["mod.id"].toString()
 val modName = project.properties["mod.name"].toString()
 val modVersion = project.properties["mod.version"].toString()
-val transformerFile = file("src/main/resources/accesstransformer.cfg")
-
-blossom {
-    replaceToken("@mod_id@", modId)
-    replaceToken("@mod_name@", modName)
-    replaceToken("@mod_version@", modVersion)
-}
 
 java {
-    toolchain.languageVersion.set(JavaLanguageVersion.of(8))
-}
-
-loom {
-    launchConfigs {
-        "client" {
-            property("mixin.debug", "true")
-            arg("--tweakClass", "org.spongepowered.asm.launch.MixinTweaker")
-        }
-    }
-    runConfigs {
-        "client" {
-            if (SystemUtils.IS_OS_MAC_OSX) vmArgs.remove("-XstartOnFirstThread")
-        }
-        remove(getByName("server"))
-    }
-    forge {
-        pack200Provider.set(dev.architectury.pack200.java.Pack200Adapter())
-        mixinConfig("mixins.$modId.json")
-        if (transformerFile.exists()) accessTransformer(transformerFile)
-    }
-    mixin {
-        defaultRefmapName.set("mixins.$modId.refmap.json")
-    }
-}
-
-tasks.compileJava {
-    dependsOn(tasks.processResources)
+    toolchain.languageVersion.set(JavaLanguageVersion.of(21))
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 sourceSets.main {
-    output.setResourcesDir(sourceSets.main.flatMap { it.java.classesDirectory })
-    java.srcDir(layout.projectDirectory.dir("src/main/kotlin"))
     kotlin.destinationDirectory.set(java.destinationDirectory)
+}
+
+loom {
+    mixin {
+        defaultRefmapName.set("mixins.$modId.refmap.json")
+        add("main", "mixins.$modId.refmap.json")
+    }
+    runConfigs {
+        named("client") {
+            property("mixin.debug", "true")
+        }
+        remove(named("server").get())
+    }
 }
 
 repositories {
@@ -73,74 +51,44 @@ val shadowImpl: Configuration by configurations.creating {
 }
 
 dependencies {
-    minecraft("com.mojang:minecraft:1.8.9")
-    mappings("de.oceanlabs.mcp:mcp_stable:22-1.8.9")
-    forge("net.minecraftforge:forge:1.8.9-11.15.1.2318-1.8.9")
-
-    shadowImpl("org.spongepowered:mixin:0.7.11-SNAPSHOT") {
-        isTransitive = false
-    }
-    annotationProcessor("org.spongepowered:mixin:0.8.5-SNAPSHOT")
+    minecraft("com.mojang:minecraft:${project.properties["minecraft_version"]}")
+    mappings("net.fabricmc:yarn:${project.properties["yarn_mappings"]}:v2")
+    modImplementation("net.fabricmc:fabric-loader:${project.properties["loader_version"]}")
+    modImplementation("net.fabricmc.fabric-api:fabric-api:${project.properties["fabric_version"]}")
+    modImplementation("net.fabricmc:fabric-language-kotlin:${project.properties["fabric_kotlin_version"]}")
 
     shadowImpl("org.reflections:reflections:0.10.2")
-    shadowImpl("gg.essential:elementa:710")
-    shadowImpl("gg.essential:universalcraft-1.8.9-forge:430")
-    shadowImpl("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
 
-    shadowImpl("xyz.meowing:vexel-1.8.9-forge:110") {
-        exclude("org.lwjgl")
-    }
+    // TODO: Verify that these Essential library versions support Fabric 1.21.1.
+    // Check https://repo.essential.gg for updated coordinates.
+    shadowImpl("gg.essential:elementa:710")
+    shadowImpl("gg.essential:universalcraft-1.21.11-fabric:330")
+
+    shadowImpl("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2")
     shadowImpl("com.squareup.okhttp3:okhttp-jvm:5.2.1")
 
-    runtimeOnly("me.djtheredstoner:DevAuth-forge-legacy:1.2.1")
+    // TODO: Check https://maven.deftu.dev/releases for a vexel-1.21.1-fabric artifact.
+    // Uncomment and update the version once confirmed.
+    // shadowImpl("xyz.meowing:vexel-1.21.1-fabric:110")
+
+    modRuntimeOnly("me.djtheredstoner:DevAuth-fabric:1.2.1")
+}
+
+tasks.compileJava {
+    dependsOn(tasks.processResources)
 }
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
-}
-
-tasks.withType<Jar> {
-    archiveBaseName.set("zen-1.8.9-forge")
-    manifest.attributes.run {
-        this["Main-Class"] = "xyz.meowing.zen.Installer"
-        this["FMLCorePluginContainsFMLMod"] = "true"
-        this["ForceLoadAsMod"] = "true"
-        this["TweakClass"] = "org.spongepowered.asm.launch.MixinTweaker"
-        this["MixinConfigs"] = "mixins.$modId.json"
-        if (transformerFile.exists()) this["FMLAT"] = "${modId}_at.cfg"
-    }
-}
-
-tasks.processResources {
-    inputs.property("mod_version", project.version)
-    inputs.property("mc_version", mcVersion)
-    inputs.property("mod_id", modId)
-    inputs.property("mod_group", baseGroup)
-
-    filesMatching(listOf("mcmod.info", "mixins.$modId.json")) {
-        expand(inputs.properties)
-    }
-
-    rename("accesstransformer.cfg", "META-INF/${modId}_at.cfg")
+    options.release.set(21)
 }
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_21)
         freeCompilerArgs.add("-Xlambdas=class")
-        languageVersion.set(org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0)
+        languageVersion.set(KotlinVersion.KOTLIN_2_0)
     }
-}
-
-tasks.named<net.fabricmc.loom.task.RemapJarTask>("remapJar") {
-    archiveClassifier.set("")
-    archiveBaseName.set("zen-1.8.9-forge-${modVersion}")
-    from(tasks.shadowJar)
-    input.set(tasks.shadowJar.get().archiveFile)
-}
-
-tasks.jar {
-    archiveClassifier.set("without-deps")
-    destinationDirectory.set(layout.buildDirectory.dir("intermediates"))
 }
 
 tasks.register("generateLists") {
@@ -184,6 +132,15 @@ tasks.register("generateLists") {
 }
 
 tasks.processResources {
+    inputs.property("mod_version", modVersion)
+    inputs.property("mc_version", mcVersion)
+    inputs.property("mod_id", modId)
+    inputs.property("mod_group", baseGroup)
+
+    filesMatching(listOf("fabric.mod.json", "mixins.$modId.json")) {
+        expand(inputs.properties)
+    }
+
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn("generateLists")
     from("build/generated/resources")
@@ -199,6 +156,17 @@ tasks.shadowJar {
     relocate("gg.essential.elementa")
     relocate("gg.essential.universal")
     mergeServiceFiles()
+}
+
+tasks.jar {
+    archiveClassifier.set("without-deps")
+    destinationDirectory.set(layout.buildDirectory.dir("intermediates"))
+}
+
+tasks.named<net.fabricmc.loom.task.RemapJarTask>("remapJar") {
+    inputFile.set(tasks.shadowJar.flatMap { it.archiveFile })
+    archiveClassifier.set("")
+    archiveBaseName.set("zen-1.21.11-fabric-${modVersion}")
 }
 
 tasks.assemble.get().dependsOn(tasks.remapJar)

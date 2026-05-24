@@ -5,6 +5,13 @@ import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import net.fabricmc.api.ClientModInitializer
+import net.fabricmc.api.EnvType
+import net.fabricmc.api.Environment
+import net.minecraft.client.MinecraftClient
+import net.minecraft.client.gui.screen.ingame.InventoryScreen
+import net.minecraft.text.ClickEvent
+import org.apache.logging.log4j.LogManager
 import xyz.meowing.zen.compat.OldConfig
 import xyz.meowing.zen.config.ZenConfig
 import xyz.meowing.zen.config.ui.ConfigUI
@@ -12,24 +19,15 @@ import xyz.meowing.zen.events.*
 import xyz.meowing.zen.features.Debug
 import xyz.meowing.zen.features.Feature
 import xyz.meowing.zen.features.FeatureLoader
-import xyz.meowing.zen.features.general.ContributorColor
 import xyz.meowing.zen.utils.ChatUtils
 import xyz.meowing.zen.utils.DataUtils
 import xyz.meowing.zen.utils.LoopUtils
 import xyz.meowing.zen.utils.NetworkUtils
 import xyz.meowing.zen.utils.TickUtils
-import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.inventory.GuiInventory
-import net.minecraft.event.ClickEvent
-import net.minecraftforge.fml.common.Mod
-import net.minecraftforge.fml.common.event.FMLInitializationEvent
-import org.apache.logging.log4j.LogManager
-import xyz.meowing.knit.api.loader.KnitModInfo
-import xyz.meowing.vexel.Vexel
 
-@Mod(modid = "zen", name = "Zen", version = "1.8.9", useMetadata = true, clientSideOnly = true)
-class Zen {
-    data class PersistentData (val isFirstInstall: Boolean = true)
+@Environment(EnvType.CLIENT)
+class Zen : ClientModInitializer {
+    data class PersistentData(val isFirstInstall: Boolean = true)
     private var eventCall: EventBus.EventCall? = null
     private lateinit var FirstInstall: DataUtils<PersistentData>
 
@@ -39,27 +37,25 @@ class Zen {
     @Target(AnnotationTarget.CLASS)
     annotation class Command
 
-    @Mod.EventHandler
-    fun init(event: FMLInitializationEvent) {
-        Vexel.init()
+    override fun onInitializeClient() {
+        // TODO: Re-enable once vexel-1.21.1-fabric is available
+        // Vexel.init()
 
         EventBus.post(GameEvent.Load())
 
-        OldConfig.convertConfig(mc.mcDataDir)
+        OldConfig.convertConfig(mc.runDirectory)
         configUI = ZenConfig()
         FeatureLoader.init()
         initializeFeatures()
         executePending()
 
-        mc.renderManager.skinMap.let {
-            it["slim"]?.run { addLayer(ContributorColor.CosmeticRendering()) }
-            it["default"]?.run { addLayer(ContributorColor.CosmeticRendering()) }
-        }
+        // TODO: Port ContributorColor layer registration to Fabric 1.21.1 player renderer API
+        // mc.playerSkin handling changed significantly; use EntityRendererRegistry or Mixin instead
 
         FirstInstall = DataUtils("zen-data", PersistentData())
 
-        eventCall = EventBus.register<EntityEvent.Join> ({ event ->
-            if (event.entity == mc.thePlayer) {
+        eventCall = EventBus.register<EntityEvent.Join>({ event ->
+            if (event.entity == mc.player) {
                 ChatUtils.addMessage(
                     "$prefix §fMod loaded.",
                     "§c${FeatureLoader.getFeatCount()} modules §8- §c${FeatureLoader.getLoadtime()}ms §8- §c${FeatureLoader.getCommandCount()} commands"
@@ -68,7 +64,12 @@ class Zen {
                 if (data.isFirstInstall) {
                     ChatUtils.addMessage("$prefix §fThanks for installing Zen!")
                     ChatUtils.addMessage("§7> §fUse §c/zen §fto open the config or §c/zenhud §fto edit HUD elements")
-                    ChatUtils.addMessage("§7> §cDiscord:§b [Discord]", "Discord server", ClickEvent.Action.OPEN_URL, "https://discord.gg/KPmHQUC97G")
+                    ChatUtils.addMessage(
+                        "§7> §cDiscord:§b [Discord]",
+                        "Discord server",
+                        ClickEvent.Action.OPEN_URL,
+                        "https://discord.gg/KPmHQUC97G"
+                    )
                     FirstInstall.setData(data.copy(isFirstInstall = false))
                     FirstInstall.save()
                 }
@@ -83,27 +84,27 @@ class Zen {
             }
         })
 
-        EventBus.register<GuiEvent.Open> ({ event ->
-            if (event.screen is GuiInventory) isInInventory = true
+        EventBus.register<GuiEvent.Open>({ event ->
+            if (event.screen is InventoryScreen) isInInventory = true
         })
 
-        EventBus.register<GuiEvent.Close> ({
+        EventBus.register<GuiEvent.Close>({
             isInInventory = false
         })
 
-        EventBus.register<AreaEvent.Main> ({
+        EventBus.register<AreaEvent.Main>({
             TickUtils.scheduleServer(1) {
                 areaFeatures.forEach { it.update() }
             }
         })
 
-        EventBus.register<AreaEvent.Sub> ({
+        EventBus.register<AreaEvent.Sub>({
             TickUtils.scheduleServer(1) {
                 subareaFeatures.forEach { it.update() }
             }
         })
 
-        EventBus.register<AreaEvent.Skyblock> ({
+        EventBus.register<AreaEvent.Skyblock>({
             TickUtils.scheduleServer(1) {
                 skyblockFeatures.forEach { it.update() }
             }
@@ -114,7 +115,6 @@ class Zen {
             onSuccess = { jsonObject ->
                 if (jsonObject.get("success")?.asBoolean != true) return@getJson
                 val dataElement = jsonObject.get("data") ?: return@getJson
-
                 mayorData = Gson().fromJson(dataElement, ApiMayor::class.java)
             },
             onError = { exception ->
@@ -133,9 +133,8 @@ class Zen {
         lateinit var configUI: ConfigUI
         const val prefix = "§7[§bZen§7]"
         val features = mutableListOf<Feature>()
-        val mc: Minecraft = Minecraft.getMinecraft()
+        val mc: MinecraftClient get() = MinecraftClient.getInstance()
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val modInfo = KnitModInfo("@mod_id@", "@mod_name@", "@mod_version@")
         var isInInventory = false
         var mayorData: ApiMayor? = null
 
@@ -150,8 +149,8 @@ class Zen {
             val callback: (Any) -> Unit = { _ ->
                 if (instance is Feature) instance.update()
             }
-
-            if (::configUI.isInitialized) configUI.registerListener(configKey, callback) else pendingCallbacks.add(configKey to callback)
+            if (::configUI.isInitialized) configUI.registerListener(configKey, callback)
+            else pendingCallbacks.add(configKey to callback)
         }
 
         fun initializeFeatures() {
@@ -162,16 +161,14 @@ class Zen {
                 if (feature.skyblockOnly) skyblockFeatures.add(feature)
                 feature.addConfig(configUI)
                 feature.initialize()
-                feature.configKey?.let {
-                    registerListener(it, feature)
-                }
+                feature.configKey?.let { registerListener(it, feature) }
                 feature.update()
             }
             pendingFeatures.clear()
         }
 
         fun addFeature(feature: Feature) = pendingFeatures.add(feature)
-        fun openConfig() = mc.displayGuiScreen(configUI)
+        fun openConfig() = mc.setScreen(configUI)
     }
 }
 
